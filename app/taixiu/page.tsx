@@ -120,6 +120,79 @@ function DiceSvg({ value }: { value: number }) {
   );
 }
 
+function buildPolylinePoints(
+  values: number[],
+  width: number,
+  height: number,
+  padding: number,
+  minY: number,
+  maxY: number
+) {
+  const n = values.length;
+  if (n === 0) return "";
+  const innerW = Math.max(1, width - padding * 2);
+  const innerH = Math.max(1, height - padding * 2);
+  const step = n === 1 ? 0 : innerW / (n - 1);
+  const clamp = (v: number) => Math.min(maxY, Math.max(minY, v));
+  const norm = (v: number) => (clamp(v) - minY) / Math.max(1e-9, maxY - minY);
+
+  return values
+    .map((v, i) => {
+      const x = padding + step * i;
+      const y = padding + (1 - norm(v)) * innerH;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+function Grid({
+  width,
+  height,
+  padding,
+  rows,
+  cols,
+}: {
+  width: number;
+  height: number;
+  padding: number;
+  rows: number;
+  cols: number;
+}) {
+  const innerW = Math.max(1, width - padding * 2);
+  const innerH = Math.max(1, height - padding * 2);
+  const rowStep = innerH / rows;
+  const colStep = innerW / cols;
+
+  const lines: Array<React.ReactElement> = [];
+  for (let r = 0; r <= rows; r++) {
+    const y = padding + r * rowStep;
+    lines.push(
+      <line
+        key={`r-${r}`}
+        x1={padding}
+        y1={y}
+        x2={width - padding}
+        y2={y}
+        stroke="rgba(255,255,255,0.10)"
+      />
+    );
+  }
+  for (let c = 0; c <= cols; c++) {
+    const x = padding + c * colStep;
+    lines.push(
+      <line
+        key={`c-${c}`}
+        x1={x}
+        y1={padding}
+        x2={x}
+        y2={height - padding}
+        stroke="rgba(255,255,255,0.10)"
+      />
+    );
+  }
+  return <g>{lines}</g>;
+}
+
 export default function TaiXiuPage() {
   const [balance, setBalance] = useState<number>(DEFAULT_BALANCE);
   const [betText, setBetText] = useState<string>("10000");
@@ -144,6 +217,18 @@ export default function TaiXiuPage() {
   const expectedProfit = useMemo(
     () => Math.floor(fairWinProb * winProfit - (1 - fairWinProb) * bet),
     [bet, winProfit]
+  );
+
+  const chartRounds = useMemo(() => history.slice(0, 20).reverse(), [history]);
+  const diceSeries = useMemo(() => {
+    const d1 = chartRounds.map((r) => r.dice[0]);
+    const d2 = chartRounds.map((r) => r.dice[1]);
+    const d3 = chartRounds.map((r) => r.dice[2]);
+    return { d1, d2, d3 };
+  }, [chartRounds]);
+  const resultSeries = useMemo(
+    () => chartRounds.map((r) => (r.result === "tai" ? 2 : 1)),
+    [chartRounds]
   );
 
   function play() {
@@ -444,6 +529,213 @@ export default function TaiXiuPage() {
                   <b>{formatVND(lastRound.balanceAfter)}</b>
                 </div>
               )}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-6 rounded-3xl border border-white/30 bg-white/70 p-5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 sm:p-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold">Soi cầu</h2>
+            <div className="text-xs text-zinc-600 dark:text-zinc-400">
+              {chartRounds.length === 0 ? "Chưa có dữ liệu" : `Gần nhất: ${chartRounds.length} ván`}
+            </div>
+          </div>
+
+          {chartRounds.length === 0 ? (
+            <div className="text-sm text-zinc-600 dark:text-zinc-400">
+              Chơi vài ván để hiện biểu đồ thống kê.
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-white/25 bg-gradient-to-br from-zinc-950/90 to-zinc-900/80 p-4 text-white shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-sm font-semibold">Xúc xắc</div>
+                  <div className="flex items-center gap-3 text-[11px] text-white/80">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      1
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-sky-400" />
+                      2
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-fuchsia-400" />
+                      3
+                    </span>
+                  </div>
+                </div>
+
+                <svg
+                  viewBox="0 0 520 220"
+                  className="h-[220px] w-full"
+                  aria-label="Biểu đồ xúc xắc (3 đường)"
+                >
+                  <defs>
+                    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+                      <feGaussianBlur stdDeviation="2.2" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+
+                  <rect x="0" y="0" width="520" height="220" rx="18" fill="rgba(255,255,255,0.06)" />
+                  <Grid width={520} height={220} padding={22} rows={5} cols={9} />
+
+                  <polyline
+                    points={buildPolylinePoints(diceSeries.d1, 520, 220, 22, 1, 6)}
+                    fill="none"
+                    stroke="rgba(52,211,153,0.95)"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    filter="url(#glow)"
+                  />
+                  <polyline
+                    points={buildPolylinePoints(diceSeries.d2, 520, 220, 22, 1, 6)}
+                    fill="none"
+                    stroke="rgba(56,189,248,0.95)"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    filter="url(#glow)"
+                  />
+                  <polyline
+                    points={buildPolylinePoints(diceSeries.d3, 520, 220, 22, 1, 6)}
+                    fill="none"
+                    stroke="rgba(232,121,249,0.95)"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    filter="url(#glow)"
+                  />
+                </svg>
+              </div>
+
+              <div className="rounded-2xl border border-white/25 bg-gradient-to-br from-zinc-950/90 to-zinc-900/80 p-4 text-white shadow-sm">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-sm font-semibold">Kết quả trước đó (Tài/Xỉu)</div>
+                  <div className="flex items-center gap-3 text-[11px] text-white/80">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-white" />
+                      Xỉu
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-black ring-1 ring-white/30" />
+                      Tài
+                    </span>
+                  </div>
+                </div>
+
+                <svg
+                  viewBox="0 0 520 220"
+                  className="h-[220px] w-full"
+                  aria-label="Biểu đồ kết quả (1 đường)"
+                >
+                  <defs>
+                    <filter id="glow2" x="-30%" y="-30%" width="160%" height="160%">
+                      <feGaussianBlur stdDeviation="2.2" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+
+                  <rect x="0" y="0" width="520" height="220" rx="18" fill="rgba(255,255,255,0.06)" />
+                  <Grid width={520} height={220} padding={22} rows={2} cols={9} />
+
+                  {(() => {
+                    const width = 520;
+                    const height = 220;
+                    const padding = 22;
+                    const innerW = Math.max(1, width - padding * 2);
+                    const innerH = Math.max(1, height - padding * 2);
+                    const n = resultSeries.length;
+                    const step = n === 1 ? 0 : innerW / (n - 1);
+                    const toXY = (i: number, v: number) => {
+                      const x = padding + step * i;
+                      const norm = (v - 1) / 1; // 1..2
+                      const y = padding + (1 - norm) * innerH;
+                      return { x, y };
+                    };
+
+                    const segs: Array<React.ReactElement> = [];
+                    for (let i = 1; i < n; i++) {
+                      const prev = chartRounds[i - 1];
+                      const cur = chartRounds[i];
+                      const a = toXY(i - 1, resultSeries[i - 1]);
+                      const b = toXY(i, resultSeries[i]);
+                      const isTai = cur.result === "tai";
+
+                      // Outline to keep black visible on dark bg.
+                      segs.push(
+                        <line
+                          key={`o-${i}`}
+                          x1={a.x}
+                          y1={a.y}
+                          x2={b.x}
+                          y2={b.y}
+                          stroke="rgba(255,255,255,0.55)"
+                          strokeWidth="5"
+                          strokeLinecap="round"
+                        />
+                      );
+                      segs.push(
+                        <line
+                          key={`s-${i}`}
+                          x1={a.x}
+                          y1={a.y}
+                          x2={b.x}
+                          y2={b.y}
+                          stroke={isTai ? "rgba(0,0,0,0.98)" : "rgba(255,255,255,0.98)"}
+                          strokeWidth="3.2"
+                          strokeLinecap="round"
+                          filter="url(#glow2)"
+                        />
+                      );
+
+                      // small node
+                      segs.push(
+                        <circle
+                          key={`p-${i}`}
+                          cx={b.x}
+                          cy={b.y}
+                          r="3.2"
+                          fill={isTai ? "rgba(0,0,0,0.98)" : "rgba(255,255,255,0.98)"}
+                          stroke="rgba(255,255,255,0.45)"
+                          strokeWidth="1.2"
+                        />
+                      );
+                    }
+
+                    // first node
+                    if (n >= 1) {
+                      const first = chartRounds[0];
+                      const a = toXY(0, resultSeries[0]);
+                      const isTai = first.result === "tai";
+                      segs.unshift(
+                        <circle
+                          key="p-0"
+                          cx={a.x}
+                          cy={a.y}
+                          r="3.2"
+                          fill={isTai ? "rgba(0,0,0,0.98)" : "rgba(255,255,255,0.98)"}
+                          stroke="rgba(255,255,255,0.45)"
+                          strokeWidth="1.2"
+                        />
+                      );
+                    }
+                    return <g>{segs}</g>;
+                  })()}
+                </svg>
+
+                <div className="mt-2 text-[11px] text-white/70">
+                  Trục tung ẩn giá trị. Độ cao thể hiện loại: thấp = Xỉu, cao = Tài.
+                </div>
+              </div>
             </div>
           )}
         </section>
